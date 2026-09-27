@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ChordVerse - Canzoniere Online, Accordi Chitarra e Tastiera</title>
+  <meta name="theme-color" content="#121214">
+  <link rel="manifest" href="manifest.json">
+  <style>
+    :root { --bg: #121214; --card: #1e1e24; --accent: #ff9800; --text: #ffffff; --sec: #a0a0ab; --border: #2e2e38; --chord: #ffb74d; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding-bottom: 70px; }
+    header { background-color: var(--card); padding: 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+    .logo { font-size: 1.2rem; font-weight: bold; color: var(--accent); }
+    .container { padding: 15px; max-width: 600px; margin: 0 auto; }
+    .nav-tabs { display: flex; gap: 10px; margin-bottom: 15px; }
+    .tab-btn { flex: 1; padding: 10px; background: var(--card); color: var(--sec); border: 1px solid var(--border); border-radius: 6px; font-weight: bold; cursor: pointer; }
+    .tab-btn.active { background: var(--accent); color: #000; }
+    .artist-header { background: var(--card); padding: 12px; margin: 15px 0 8px 0; border-radius: 6px; color: var(--accent); font-weight: bold; border-left: 4px solid var(--accent); }
+    .album-title { font-size: 0.95rem; color: var(--sec); margin: 10px 0 5px 5px; font-weight: 600; }
+    .song-card { background: var(--card); padding: 12px 15px; border-radius: 6px; margin-bottom: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); }
+    .btn { background: var(--accent); color: #000; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+    .btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border); }
+    .chord-sheet { font-family: monospace; font-size: 1.05rem; line-height: 1.8; white-space: pre-wrap; background: var(--card); padding: 15px; border-radius: 8px; overflow-x: auto; }
+    .line-group { margin-bottom: 12px; }
+    .chord-line { color: var(--chord); font-weight: bold; }
+    .text-line { color: var(--text); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">🎸 ChordVerse</div>
+    <button class="btn btn-outline" id="backBtn" style="display:none;" onclick="showList()">← Elenco</button>
+  </header>
+
+  <div class="container">
+    <div id="listView">
+      <div class="nav-tabs">
+        <button class="tab-btn active" id="tabIta" onclick="switchZone('ita')">🇮🇹 Italiani</button>
+        <button class="tab-btn" id="tabEst" onclick="switchZone('est')">🌍 Stranieri</button>
+      </div>
+      <div id="catalog">Caricamento brani...</div>
+    </div>
+
+    <div id="songView" style="display:none;">
+      <h2 id="viewTitle"></h2>
+      <h4 id="viewAlbum" style="color: var(--sec); margin-bottom: 15px;"></h4>
+      <div style="margin-bottom: 15px; background: var(--card); padding: 10px; border-radius: 8px;">
+        <span>Tonalità: </span>
+        <button class="btn btn-outline" onclick="transpose(-1)">-1</button>
+        <span id="transVal" style="font-weight:bold; margin: 0 5px;">0</span>
+        <button class="btn btn-outline" onclick="transpose(1)">+1</button>
+      </div>
+      <div id="chordSheet" class="chord-sheet"></div>
+    </div>
+  </div>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+    }
+
+    let currentZone = 'ita';
+    let currentTranspose = 0;
+    let currentSong = null;
+    let catalogData = [];
+
+    const dataFiles = ['./data/ligabue.json', './data/litfiba.json', './data/78bit.json'];
+    const chordsScale = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+    async function loadData() {
+      catalogData = [];
+      for (let file of dataFiles) {
+        try {
+          let res = await fetch(file);
+          if(res.ok) {
+            let json = await res.json();
+            catalogData.push(json);
+          }
+        } catch(e) { console.log('Errore caricamento file:', file); }
+      }
+      renderCatalog();
+    }
+
+    function switchZone(zone) {
+      currentZone = zone;
+      document.getElementById('tabIta').classList.toggle('active', zone === 'ita');
+      document.getElementById('tabEst').classList.toggle('active', zone === 'est');
+      renderCatalog();
+    }
+
+    function renderCatalog() {
+      const container = document.getElementById('catalog');
+      container.innerHTML = '';
+      
+      const filtered = catalogData.filter(item => (currentZone === 'ita' ? item.zone === 'Italiani' : item.zone === 'Stranieri'));
+      
+      if(filtered.length === 0) {
+        container.innerHTML = '<p style="color:var(--sec); padding:20px 0;">Nessun artista presente in questa sezione.</p>';
+        return;
+      }
+
+      filtered.forEach(artist => {
+        const aHeader = document.createElement('div');
+        aHeader.className = 'artist-header';
+        aHeader.innerText = artist.artist;
+        container.appendChild(aHeader);
+
+        artist.albums.forEach(album => {
+          const aTitle = document.createElement('div');
+          aTitle.className = 'album-title';
+          aTitle.innerText = "Album: " + album.title;
+          container.appendChild(aTitle);
+
+          album.songs.forEach(song => {
+            const card = document.createElement('div');
+            card.className = 'song-card';
+            card.onclick = () => openSong(song, album.title);
+            card.innerHTML = `<span>${song.title}</span><small style="color:var(--accent)">Accordi</small>`;
+            container.appendChild(card);
+          });
+        });
+      });
+    }
+
+    function openSong(song, album) {
+      currentSong = song;
+      currentTranspose = 0;
+      document.getElementById('transVal').innerText = "0";
+      document.getElementById('viewTitle').innerText = song.title;
+      document.getElementById('viewAlbum').innerText = "Album: " + album;
+      document.getElementById('listView').style.display = 'none';
+      document.getElementById('songView').style.display = 'block';
+      document.getElementById('backBtn').style.display = 'block';
+      renderChordSheet();
+    }
+
+    function showList() {
+      document.getElementById('listView').style.display = 'block';
+      document.getElementById('songView').style.display = 'none';
+      document.getElementById('backBtn').style.display = 'none';
+    }
+
+    function transpose(steps) {
+      currentTranspose += steps;
+      document.getElementById('transVal').innerText = (currentTranspose > 0 ? "+" : "") + currentTranspose;
+      renderChordSheet();
+    }
+
+    function transposeChord(chord, steps) {
+      return chord.replace(/([A-G][#b]?)/g, (match) => {
+        let idx = chordsScale.indexOf(match.replace('b', '#'));
+        if (idx === -1) return match;
+        let newIdx = (idx + steps) % 12;
+        if (newIdx < 0) newIdx += 12;
+        return chordsScale[newIdx];
+      });
+    }
+
+    function renderChordSheet() {
+      if(!currentSong) return;
+      const lines = currentSong.chords.split('\n');
+      const container = document.getElementById('chordSheet');
+      container.innerHTML = '';
+
+      lines.forEach(line => {
+        let chordLine = '';
+        let textLine = '';
+        let regex = /\[(.*?)\]/g;
+        let lastIdx = 0;
+        let match;
+
+        while ((match = regex.exec(line)) !== null) {
+          let textBefore = line.substring(lastIdx, match.index);
+          textLine += textBefore;
+          let transposed = transposeChord(match[1], currentTranspose);
+          let spacesNeeded = Math.max(0, textBefore.length - (chordLine.length - lastIdx));
+          chordLine += ' '.repeat(spacesNeeded) + transposed;
+          lastIdx = regex.lastIndex;
+        }
+        textLine += line.substring(lastIdx);
+
+        const group = document.createElement('div');
+        group.className = 'line-group';
+        if (chordLine.trim() !== '') {
+          const cEl = document.createElement('div');
+          cEl.className = 'chord-line';
+          cEl.innerText = chordLine;
+          group.appendChild(cEl);
+        }
+        const tEl = document.createElement('div');
+        tEl.className = 'text-line';
+        tEl.innerText = textLine;
+        group.appendChild(tEl);
+        container.appendChild(group);
+      });
+    }
+
+    loadData();
+  </script>
+</body>
+</html>
